@@ -118,10 +118,6 @@
     <div class="logo-icon">⚡</div>
     <div class="logo-text">Query<span>Mind</span></div>
   </div>
-  <div class="header-right">
-    <div class="model-status not-ready" id="modelStatus">⏳ Checking...</div>
-    <div class="badge">AI SQL v1.0</div>
-  </div>
 </header>
 
 <main>
@@ -137,7 +133,14 @@
   <!-- Available Tables hint -->
   <div class="tables-panel" id="tablesPanel">
     <div class="csv-header">🗄️ Available Tables &amp; Columns</div>
-    <div id="tablesList" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px;"></div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap;">
+      <label style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);">ACTIVE TABLE:</label>
+      <select id="activeTable" onchange="onTableChange()" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:0.78rem;padding:6px 12px;outline:none;cursor:pointer;">
+        <option value="">-- select a table --</option>
+      </select>
+      <span id="activeTableCols" style="font-family:var(--mono);font-size:0.65rem;color:var(--muted);"></span>
+    </div>
+    <div id="tablesList" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
   </div>
 
   <!-- CSV Upload -->
@@ -193,8 +196,13 @@
   <div id="results">
     <div class="result-grid">
       <div class="panel">
-        <div class="panel-header"><span>📄</span> Generated SQL</div>
-        <div class="panel-body"><div class="sql-block" id="sqlDisplay"></div></div>
+        <div class="panel-header">
+          <span>📄</span> Generated SQL
+          <button onclick="rerunSQL()" id="rerunBtn" style="margin-left:auto;background:linear-gradient(135deg,var(--accent),#9b8aff);border:none;border-radius:6px;padding:4px 14px;color:white;font-family:var(--mono);font-size:0.7rem;cursor:pointer;display:none;">▶ Re-run</button>
+        </div>
+        <div class="panel-body">
+          <textarea id="sqlDisplay" spellcheck="false" oninput="document.getElementById('rerunBtn').style.display='inline-block'" style="width:100%;background:#0d0d14;border:none;outline:none;font-family:var(--mono);font-size:0.85rem;line-height:1.8;color:var(--text);border-radius:8px;padding:16px;resize:vertical;min-height:80px;"></textarea>
+        </div>
       </div>
       <div class="panel">
         <div class="panel-header"><span>🧠</span> Explanation</div>
@@ -203,10 +211,7 @@
           <ul class="steps-list" id="stepsList"></ul>
         </div>
       </div>
-      <div class="panel schema-panel">
-        <div class="panel-header"><span>🔗</span> Database Schema</div>
-        <div id="schema-canvas"></div>
-      </div>
+
       <div class="panel results-panel">
         <div class="panel-header">
           <span>📊</span> Query Results
@@ -222,53 +227,72 @@
   </div>
 </main>
 
-<footer>QueryMind AI SQL Assistant</footer>
+<footer></footer>
 
 <script>
-// ── Load available tables ─────────────────────────────────────────
+let _allTables = {};
+
+// ── Tables ────────────────────────────────────────────────────────
 async function loadTables() {
   try {
     const res = await fetch('/tables');
-    const tables = await res.json();
+    _allTables = await res.json();
     const el = document.getElementById('tablesList');
+    const sel = document.getElementById('activeTable');
     el.innerHTML = '';
-    const entries = Object.entries(tables);
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">-- select a table --</option>';
+    const entries = Object.entries(_allTables);
     if (!entries.length) {
-      el.innerHTML = '<span style="font-family:var(--mono);font-size:0.75rem;color:var(--muted)">No tables yet. Upload a CSV or use the default demo data.</span>';
+      el.innerHTML = '<span style="font-family:var(--mono);font-size:0.75rem;color:var(--muted)">No tables yet. Upload a CSV to get started.</span>';
       return;
     }
     entries.forEach(([table, cols]) => {
-      el.innerHTML += `<div class="table-chip">
-        <div class="table-chip-name">📋 ${table}</div>
-        <div class="table-chip-cols">${cols.map(c=>`<span class="table-chip-col">· ${c}</span>`).join('')}</div>
-      </div>`;
+      sel.innerHTML += `<option value="${table}">${table}</option>`;
+      el.innerHTML += `<div class="table-chip"><div class="table-chip-name">📋 ${table}</div><div class="table-chip-cols">${cols.map(c=>`<span class="table-chip-col">· ${c}</span>`).join('')}</div></div>`;
     });
+    if (prev && _allTables[prev]) sel.value = prev;
+    else sel.value = entries[0][0];
+    onTableChange();
   } catch(e) {}
 }
-loadTables();
+
+function onTableChange() {
+  const t = document.getElementById('activeTable').value;
+  const hint = document.getElementById('activeTableCols');
+  if (t && _allTables[t]) {
+    hint.textContent = 'Columns: ' + _allTables[t].join(', ');
+    updateSuggestions(t, _allTables[t]);
+  } else {
+    hint.textContent = '';
+  }
+}
+
+function updateSuggestions(table, cols) {
+  const hasNum  = cols.some(c => /amount|price|salary|revenue|sales|total|cost|value|score|qty|enrollment/i.test(c));
+  const hasDate = cols.some(c => /date|time|created|updated/i.test(c));
+  const suggestions = [
+    `Show all ${table}`, `How many rows in ${table}`,
+    hasNum ? `Total sum` : `Count all`,
+    hasNum ? `Average value` : `List all`,
+    hasDate ? `Recent entries` : `Top 5`,
+    hasNum ? `Highest value` : `Show everything`,
+  ];
+  document.querySelector('.suggestions').innerHTML =
+    suggestions.map(s => `<div class="suggestion" onclick="fill(this)">${s}</div>`).join('');
+}
+
+// ── Status ────────────────────────────────────────────────────────
 async function checkStatus() {
   try {
     const res = await fetch('/status');
     const data = await res.json();
-    const el = document.getElementById('modelStatus');
     const btn = document.getElementById('runBtn');
     const warn = document.getElementById('warnBanner');
-    if (data.model_ready) {
-      el.textContent = '✅ Model Ready';
-      el.className = 'model-status ready';
-      btn.disabled = false;
-      warn.style.display = 'none';
-    } else {
-      el.textContent = '⚠️ Model Not Trained';
-      el.className = 'model-status not-ready';
-      btn.disabled = true;
-      warn.style.display = 'block';
-    }
-  } catch(e) {
-    document.getElementById('modelStatus').textContent = '❌ Server Error';
-  }
+    if (data.model_ready) { btn.disabled = false; warn.style.display = 'none'; }
+    else { btn.disabled = true; warn.style.display = 'block'; }
+  } catch(e) {}
 }
-checkStatus();
 
 // ── Input ─────────────────────────────────────────────────────────
 const textarea = document.getElementById('question');
@@ -286,32 +310,30 @@ function fill(el) {
 
 // ── CSV Upload ────────────────────────────────────────────────────
 function onFileSelect(input) {
-  const name = input.files[0]?.name || 'No file selected';
-  document.getElementById('csvFileName').textContent = name;
+  document.getElementById('csvFileName').textContent = input.files[0]?.name || 'No file selected';
   document.getElementById('uploadBtn').disabled = !input.files[0];
 }
 
 async function uploadCSV() {
   const fileInput = document.getElementById('csvFile');
-  const resultEl = document.getElementById('csvResult');
-  const btn = document.getElementById('uploadBtn');
+  const resultEl  = document.getElementById('csvResult');
+  const btn       = document.getElementById('uploadBtn');
   if (!fileInput.files[0]) return;
-
   btn.disabled = true;
   btn.textContent = 'Uploading...';
   resultEl.style.display = 'none';
-
   const form = new FormData();
   form.append('file', fileInput.files[0]);
-
   try {
-    const res = await fetch('/upload-csv', { method: 'POST', body: form });
+    const res  = await fetch('/upload-csv', { method: 'POST', body: form });
     const data = await res.json();
     resultEl.style.display = 'block';
     if (res.ok) {
       resultEl.className = 'csv-result success';
-      resultEl.innerHTML = `✅ ${data.message}<br>Columns: ${data.columns.join(', ')}<br>You can now query: <strong>SELECT * FROM ${data.table}</strong>`;
-      loadTables(); // refresh table list
+      resultEl.innerHTML = `✅ ${data.message}<br>Columns: ${data.columns.join(', ')}`;
+      await loadTables();
+      document.getElementById('activeTable').value = data.table;
+      onTableChange();
     } else {
       resultEl.className = 'csv-result error';
       resultEl.textContent = '⚠️ ' + data.error;
@@ -326,38 +348,6 @@ async function uploadCSV() {
   }
 }
 
-// ── SQL Highlight ─────────────────────────────────────────────────
-function highlightSQL(sql) {
-  const kws = ['SELECT','FROM','WHERE','JOIN','ON','GROUP BY','ORDER BY','LIMIT',
-    'SUM','COUNT','AVG','MAX','MIN','HAVING','AND','OR','AS','DISTINCT','DESC','ASC',
-    'INNER','LEFT','RIGHT','OUTER'];
-  let h = sql;
-  kws.forEach(k => {
-    h = h.replace(new RegExp(`\\b(${k})\\b`, 'gi'), `<span class="kw">$1</span>`);
-  });
-  return h;
-}
-
-// ── Schema render ─────────────────────────────────────────────────
-function renderSchema(schema) {
-  const canvas = document.getElementById('schema-canvas');
-  canvas.innerHTML = '';
-  schema.nodes.forEach((node, i) => {
-    if (i > 0 && schema.edges.length) {
-      const edge = document.createElement('div');
-      edge.className = 'schema-edge';
-      edge.innerHTML = `<div class="edge-line"></div><div class="edge-label">${schema.edges[i-1]?.label || 'JOIN'}</div>`;
-      canvas.appendChild(edge);
-    }
-    const n = document.createElement('div');
-    n.className = 'schema-node';
-    n.style.animationDelay = (i*0.1)+'s';
-    n.innerHTML = `<div class="node-header" style="background:${node.color}22;color:${node.color};border-bottom:1px solid ${node.color}44">${node.label}</div>
-      <div class="node-fields">${node.fields.map(f=>`<div class="node-field">${f.split('(')[0].trim()}${f.includes('PK')?'<span class="tag">PK</span>':''}${f.includes('FK')?'<span class="tag">FK</span>':''}</div>`).join('')}</div>`;
-    canvas.appendChild(n);
-  });
-}
-
 // ── Table render ──────────────────────────────────────────────────
 function renderTable(results) {
   const thead = document.getElementById('tableHead');
@@ -368,21 +358,51 @@ function renderTable(results) {
     return;
   }
   const keys = Object.keys(results[0]);
-  thead.innerHTML = '<tr>' + keys.map(k=>`<th>${k}</th>`).join('') + '</tr>';
+  thead.innerHTML = '<tr>' + keys.map(k => `<th>${k}</th>`).join('') + '</tr>';
   results.forEach(row => {
-    tbody.innerHTML += '<tr>' + keys.map(k=>`<td>${row[k]??'—'}</td>`).join('') + '</tr>';
+    tbody.innerHTML += '<tr>' + keys.map(k => `<td>${row[k] ?? '—'}</td>`).join('') + '</tr>';
   });
+}
+
+// ── Re-run edited SQL ─────────────────────────────────────────────
+async function rerunSQL() {
+  const sql = document.getElementById('sqlDisplay').value.trim();
+  if (!sql) return;
+  const btn     = document.getElementById('rerunBtn');
+  const loader  = document.getElementById('loader');
+  const results = document.getElementById('results');
+  const errorBox = document.getElementById('errorBox');
+  btn.textContent = '⏳ Running';
+  btn.disabled = true;
+  loader.style.display = 'block';
+  results.style.display = 'none';
+  errorBox.style.display = 'none';
+  try {
+    const res  = await fetch('/run-sql', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({sql}) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Something went wrong');
+    renderTable(data.results);
+    document.getElementById('countBadge').textContent = `${data.count} row${data.count !== 1 ? 's' : ''}`;
+    loader.style.display = 'none';
+    results.style.display = 'block';
+  } catch(err) {
+    loader.style.display = 'none';
+    errorBox.style.display = 'block';
+    errorBox.textContent = '⚠️ ' + err.message;
+  } finally {
+    btn.textContent = '▶ Re-run';
+    btn.disabled = false;
+  }
 }
 
 // ── Run query ─────────────────────────────────────────────────────
 async function runQuery() {
   const question = textarea.value.trim();
   if (!question) return;
-  const btn = document.getElementById('runBtn');
-  const loader = document.getElementById('loader');
-  const results = document.getElementById('results');
+  const btn      = document.getElementById('runBtn');
+  const loader   = document.getElementById('loader');
+  const results  = document.getElementById('results');
   const errorBox = document.getElementById('errorBox');
-
   btn.disabled = true;
   document.getElementById('btnIcon').textContent = '⏳';
   document.getElementById('btnText').textContent = 'Running';
@@ -390,30 +410,22 @@ async function runQuery() {
   loader.style.display = 'block';
   results.style.display = 'none';
   errorBox.style.display = 'none';
-
   try {
-    const res = await fetch('/query', {
+    const res  = await fetch('/query', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({question})
+      body: JSON.stringify({ question, active_table: document.getElementById('activeTable').value || null })
     });
     const data = await res.json();
-    if (!res.ok) {
-      const msg = data.error || 'Something went wrong';
-      const sqlHint = data.sql ? `\n\nGenerated SQL: ${data.sql}` : '';
-      throw new Error(msg + sqlHint);
-    }
-
-    document.getElementById('sqlDisplay').innerHTML = highlightSQL(data.sql);
+    if (!res.ok) throw new Error(data.error || 'Something went wrong');
+    document.getElementById('sqlDisplay').value = data.sql;
+    document.getElementById('rerunBtn').style.display = 'none';
     document.getElementById('summaryText').textContent = data.explanation.summary || '';
     const sl = document.getElementById('stepsList');
     sl.innerHTML = '';
-    (data.explanation.steps||[]).forEach(s => {
-      const li = document.createElement('li'); li.textContent = s; sl.appendChild(li);
-    });
-    renderSchema(data.schema);
+    (data.explanation.steps || []).forEach(s => { const li = document.createElement('li'); li.textContent = s; sl.appendChild(li); });
     renderTable(data.results);
-    document.getElementById('countBadge').textContent = `${data.count} row${data.count!==1?'s':''}`;
+    document.getElementById('countBadge').textContent = `${data.count} row${data.count !== 1 ? 's' : ''}`;
     loader.style.display = 'none';
     results.style.display = 'block';
   } catch(err) {
@@ -426,6 +438,10 @@ async function runQuery() {
     document.getElementById('btnText').textContent = 'Run';
   }
 }
+
+loadTables();
+checkStatus();
 </script>
+
 </body>
 </html>

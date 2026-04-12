@@ -1,126 +1,107 @@
-# QueryMind — AI SQL Assistant 🚀
+# QueryMind — AI SQL Assistant
 
-An end-to-end AI system that converts natural language into SQL queries using a fine-tuned LLM.
+A web app that converts plain English questions into SQL queries using Llama 3.3 70B. Upload any CSV, ask questions naturally, get instant SQL + results + explanation.
 
 ---
 
-## 📁 Project Structure
+## How It Works
+
+1. Upload a CSV file → stored as a table in SQLite
+2. Type a question in plain English
+3. Question + table schema sent to **Llama 3.3 70B** via Groq API
+4. LLM generates correct SQL knowing your exact column names
+5. SQL runs against SQLite → results + explanation shown
+
+---
+
+## Stack
+
+| Layer | Technology |
+|---|---|
+| Web server | Flask (Python) |
+| Database | SQLite |
+| LLM | Llama 3.3 70B via Groq API (free) |
+| Frontend | HTML / CSS / JS |
+
+---
+
+## Project Structure
 
 ```
-sql_assistant/
-├── app.py              # Flask web app (main entry point)
+├── app.py              # Flask server, routes, SQL execution
+├── llm_sql.py          # Groq API + Llama 3.3 SQL generation
 ├── templates/
-│   └── index.html      # Beautiful dark UI
-├── train_model.py      # Fine-tune Flan-T5 on custom dataset
-├── model_utils.py      # Local model inference helper
-├── data.json           # 50+ training examples (input → SQL)
-├── requirements.txt    # Python dependencies
+│   └── index.html      # Frontend UI
+├── requirements.txt    # Dependencies
+├── .env                # GROQ_API_KEY (not committed)
 └── store.db            # Auto-created SQLite database
 ```
 
 ---
 
-## ⚡ Quick Start (Using Claude API)
+## Quick Start
 
 ### 1. Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Set your API key
-```bash
-export ANTHROPIC_API_KEY=your_key_here
+### 2. Get a free Groq API key
+Sign up at https://console.groq.com (free, no credit card)
+
+### 3. Add your key to `.env`
+```
+GROQ_API_KEY=your_key_here
 ```
 
-### 3. Run the app
+### 4. Run the app
 ```bash
 python app.py
 ```
 
-### 4. Open in browser
+### 5. Open browser
 ```
 http://localhost:5000
 ```
 
 ---
 
-## 🤖 LLM Fine-Tuning (Optional — for viva/project demo)
+## Features
 
-### 1. Install training dependencies
-```bash
-pip install transformers datasets torch
-```
-
-### 2. Train the model
-```bash
-python train_model.py
-```
-This fine-tunes `google/flan-t5-small` on your `data.json` examples.
-
-### 3. Use local model in app.py
-Replace in `app.py`:
-```python
-# Instead of Claude API:
-from model_utils import generate_sql_local
-sql = generate_sql_local(question)
-```
+- Upload any CSV — becomes a queryable table instantly
+- Natural language to SQL via Llama 3.3 70B
+- LLM-generated step-by-step SQL explanation
+- Live table + column viewer
+- Safety filter blocking DELETE / DROP / UPDATE
+- Rule-based fallback if LLM is unavailable
+- Raw SQL passthrough (type SELECT directly)
 
 ---
 
-## 🎯 Features
+## Example Queries
 
-- **Natural Language → SQL** via Claude AI (prompt engineering)
-- **Step-by-step SQL explanation** for each query
-- **Visual schema graph** showing table relationships
-- **Safety filter** blocks DELETE/DROP/UPDATE queries
-- **Beautiful dark UI** with syntax highlighting
-- **Fine-tuned LLM** (Flan-T5) for offline SQL generation
-
----
-
-## 🗄️ Database Schema
-
-```sql
-customers(id, name)
-orders(id, customer_id, amount, date)
-```
-
-Pre-seeded with 6 customers and 10 orders.
+| Question | What it does |
+|---|---|
+| `show all` | Returns all rows |
+| `how many` | COUNT(*) |
+| `top 10 sponsors` | GROUP BY + ORDER BY + LIMIT 10 |
+| `average enrollment` | AVG() on numeric column |
+| `trials started in 2024` | WHERE date LIKE '2024%' |
+| `find NIH` | WHERE sponsor LIKE '%NIH%' |
+| `SELECT * FROM [table] LIMIT 5` | Raw SQL passthrough |
 
 ---
 
-## 💬 What to Say in Viva
+## Viva Q&A
 
-**Q: What LLM did you use?**
-> "I used Claude (claude-sonnet) via the Anthropic API with carefully engineered prompts. I also fine-tuned a Flan-T5 transformer on a custom dataset of 50+ question-SQL pairs."
+**Q: What LLM are you using?**
+> Llama 3.3 70B served via Groq API. The table schema is injected into the system prompt so the model knows exact column names before generating SQL.
 
-**Q: What is prompt engineering?**
-> "Prompt engineering is designing the input to the LLM to guide its output. I included schema, rules, and examples to constrain the model to generate only valid, safe SQL."
-
-**Q: Why not train from scratch?**
-> "Training from scratch requires massive data and GPU compute. Fine-tuning a pre-trained model is efficient and domain-specific."
+**Q: How does schema injection work?**
+> Before sending the question to the LLM, we read all table names and column names from SQLite and include them in the system prompt. This gives the model full context to generate accurate SQL for any uploaded dataset.
 
 **Q: How do you prevent harmful queries?**
-> "I implemented a safety filter that blocks DELETE, DROP, UPDATE, INSERT, ALTER, and TRUNCATE keywords before execution."
+> A safety filter blocks any SQL containing DELETE, DROP, UPDATE, INSERT, ALTER, TRUNCATE, or CREATE before execution.
 
----
-
-## 🔬 Evaluation Metrics
-
-Run after fine-tuning:
-```python
-from model_utils import generate_sql_local
-
-test_cases = [
-    ("total sales", "SELECT SUM(amount) FROM orders;"),
-    ("list all customers", "SELECT * FROM customers;"),
-]
-
-correct = 0
-for question, expected in test_cases:
-    predicted = generate_sql_local(question).strip().lower()
-    if predicted == expected.strip().lower():
-        correct += 1
-
-print(f"Accuracy: {correct}/{len(test_cases)} = {correct/len(test_cases)*100:.1f}%")
-```
+**Q: What happens if the LLM fails?**
+> A rule-based fallback handles common patterns like total, average, top N, filter by value, sort, and date filtering — so the app works even without an API key.
