@@ -1,0 +1,8 @@
+my_sql_model/
+checkpoints/
+store.db
+__pycache__/
+*.pyc
+.env
+*.pt
+*.bin
