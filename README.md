@@ -1,4 +1,4 @@
-# QueryMind++ — Conversational AI Data Analyst
+# QueryMind — Conversational AI Data Analyst
 
 A full-stack AI system that lets you talk to any CSV dataset in plain English. Powered by **Llama 3.3 70B** via Groq, it generates SQL using ReAct reasoning, corrects its own mistakes, visualizes results, and explains everything step by step.
 
