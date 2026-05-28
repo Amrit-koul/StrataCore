@@ -1,189 +1,176 @@
-# QueryMind — Conversational AI Data Analyst
+# StrataCore — Analytics & Decision Support System
 
-A full-stack AI system that lets you talk to any CSV dataset in plain English. Powered by **Llama 3.3 70B** via Groq, it generates SQL using ReAct reasoning, corrects its own mistakes, visualizes results, and explains everything step by step.
-
----
-
-## What It Does
-
-Upload any CSV → ask questions in plain English → get instant SQL + results + chart + AI insights + follow-up suggestions. No SQL knowledge needed.
+StrataCore is a **natural language → SQL** assistant for **CSV and Excel** datasets. It uses **FastAPI**, loads data with **Pandas**, runs queries on **SQLite**, and renders charts with **Plotly.js**. Optional **Groq (Llama 3.3)** powers ReAct-style SQL generation, validation, self-correction on errors, intent classification, AI summaries, and conversational follow-ups.
 
 ---
 
-## Tech Stack
+## Business problem solved
+
+Many teams have “data in files” (CSV/Excel) but no fast way for non-SQL users to answer questions without exporting to a BI tool or asking an analyst.
+
+StrataCore shortens time-to-answer by letting a user:
+
+1. Upload a spreadsheet
+2. Ask a question in natural language
+3. Get transparent, executable SQL + results + a chart
+
+This is a good fit for quick analysis, demos, and lightweight “spreadsheet analytics” workflows.
+
+---
+
+## Architecture overview
+
+```mermaid
+flowchart TD
+  UI[Web UI (Jinja2 + JS + Plotly.js)] -->|/upload-table| API[FastAPI]
+  UI -->|/query| API
+  UI -->|/run-sql| API
+  UI -->|/chart-figure| API
+
+  API --> ING[Pandas ingestion]
+  ING --> DB[(SQLite store.db)]
+
+  API --> QE[NL→SQL orchestrator]
+  QE -->|LLM enabled| LLM[Groq LLM prompts]
+  QE -->|LLM disabled or invalid| RULES[Rule-based fallback]
+
+  QE --> SAFE[SQL guardrails (SELECT-only)]
+  SAFE --> DB
+
+  API --> FIG[Plotly payload builder]
+  FIG --> UI
+```
+
+### Request/data flow (question → answer)
+
+1. UI sends a question to `POST /query` (optionally with an active table).
+2. Server generates SQL via LLM (schema + sample rows) or falls back to rules.
+3. SQL is validated as SELECT-only, then executed on SQLite.
+4. Results are returned with an explanation and optional insights/follow-ups.
+5. UI requests `/chart-figure` to render Plotly charts.
+
+---
+
+## Tech stack
 
 | Layer | Technology |
-|---|---|
-| Backend | Python, Flask |
-| Database | SQLite |
-| LLM | Llama 3.3 70B via Groq API (free) |
-| Frontend | HTML, CSS, Vanilla JS |
-| Charts | Chart.js |
+|-------|------------|
+| API | Python, **FastAPI** |
+| Data | **Pandas**, **SQLite** (tabular), **SQL** |
+| LLM | Groq — Llama 3.3 70B (optional) |
+| UI | Jinja2 templates, **Plotly.js** |
 
 ---
 
-## Project Structure
+## Quick start
 
-```
-├── app.py                  # Flask server — routes, SQL execution, RAG, metrics
-├── llm_sql.py              # LLM engine — ReAct, RAG, self-correction, insights
-├── templates/
-│   └── index.html          # Full frontend UI
-├── requirements.txt        # Python dependencies
-├── .env                    # GROQ_API_KEY (not committed)
-├── .gitignore
-└── store.db                # Auto-created SQLite DB (not committed)
-```
+Install deps:
 
----
-
-## Quick Start
-
-### 1. Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Get a free Groq API key
-Sign up at https://console.groq.com — free, no credit card required.
+Optional (recommended): use a virtual environment.
 
-### 3. Add your key to `.env`
+```bash
+python -m venv .venv
+```
+
+On Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Enable LLM features (optional): create a `.env` file in the project root:
+
 ```
 GROQ_API_KEY=your_key_here
 ```
 
-### 4. Run
+Run the server:
+
 ```bash
-python app.py
+python -m stratacore
 ```
 
-### 5. Open browser
+Or (explicitly via Uvicorn):
+
+```bash
+python -m uvicorn stratacore.main:app --reload --host 127.0.0.1 --port 8000
 ```
-http://localhost:5000
-```
+
+Open **http://127.0.0.1:8000**
 
 ---
 
-## Advanced LLM Features
+## Features
 
-### ReAct Reasoning
-Instead of directly converting a question to SQL, the LLM reasons step by step:
-```
-Thought: What is the user asking for?
-Plan:    Which columns, aggregations, filters are needed?
-SQL:     SELECT [sponsor], COUNT(*) AS count FROM [trials] GROUP BY [sponsor];
-```
-This makes queries significantly more accurate on complex questions.
-
-### RAG — Retrieval-Augmented Generation
-Before sending to the LLM, 5 real rows from your table are fetched and injected into the prompt. The LLM sees actual data values (not just column names), so it understands formats like `IsHoliday = True/False` or `enrollment = 1200`.
-
-### Self-Correcting Loop
-If the generated SQL throws a SQLite error, the error message is fed back to the LLM with the broken query and it attempts to fix it — up to 2 retries automatically.
-
-### Intent Classification
-Every question is classified before hitting the LLM:
-- `aggregation` → COUNT, SUM, AVG queries
-- `trend` → time-series, line charts
-- `comparison` → side-by-side analysis
-- `filter` → WHERE clause queries
-- `lookup` → SELECT with LIMIT
-
-### Conversational Memory
-The last 3 exchanges are sent as context with every new question. You can ask follow-ups like:
-- "now filter that by holiday only"
-- "same but for store 5"
-- "show me the top 10 instead"
-
-### AI Insights
-After every query, the LLM generates 2–3 specific bullet-point insights about what the data reveals, mentioning actual values from the results.
-
-### Smart Follow-up Suggestions
-The LLM suggests 3 relevant next questions based on your current query and schema. Click any chip to instantly run it.
-
-### Smart Chart Type
-Chart type is chosen by the LLM based on intent and result shape:
-- Trend / date columns → Line chart
-- Small categories (≤6) → Pie chart
-- Comparisons / rankings → Bar chart
-- Single number → Stat card
+- **NL→SQL** with ReAct prompting, sample-row context, and **SELECT-only** validation
+- **SQL error recovery**: retry/self-correction loop on SQLite errors
+- **Intent classification**: aggregation, trend, comparison, filter, lookup
+- **Plotly** charts (bar, line, pie) plus single-metric stat view
+- Optional **AI insights** and **suggested follow-ups**
+- Lightweight conversation memory for follow-up questions
 
 ---
 
-## API Routes
+## Tradeoffs and design decisions
 
-| Method | Route | Description |
-|---|---|---|
-| GET | `/` | Serve frontend |
-| GET | `/status` | LLM availability check |
-| POST | `/query` | Main NL→SQL→results endpoint |
-| POST | `/upload-csv` | Upload CSV, create SQLite table |
-| POST | `/clear-db` | Drop all tables, reset session |
-| POST | `/clear-history` | Clear conversation memory |
-| POST | `/chart-data` | Generate chart config from results |
-| POST | `/run-sql` | Execute raw SQL directly |
-| GET | `/schema` | Return DB schema as graph nodes/edges |
-| GET | `/tables` | Return all tables and columns |
-| GET | `/metrics` | Query stats — success rate, latency, self-corrections |
+- **SQLite (embedded) vs. Postgres**: minimal setup and great for demos; not designed for high concurrency or multi-tenant use.
+- **All columns stored as TEXT**: ingestion is robust for messy spreadsheets; numeric work requires casts (the LLM is prompted to use `CAST(... AS REAL)`).
+- **String-based safety checks**: SELECT-only blocking is simple; an AST-based SQL parser would be more robust.
+- **Process-local state**: history/metrics are in-memory; production would use per-user sessions + persistence.
+- **LLM reliability vs. UX**: validation + retries improve success rate at the cost of extra latency.
+
+### Current limitations
+
+- Single dataset at a time (upload clears existing tables)
+- No authentication/authorization
+- Demo-grade guardrails
 
 ---
 
-## `/query` Response Shape
+## API (selected)
 
-```json
-{
-  "sql": "SELECT [sponsor], COUNT(*) AS count FROM [trials] GROUP BY [sponsor];",
-  "results": [{"sponsor": "NIH", "count": 42}, ...],
-  "explanation": {
-    "summary": "Groups trials by sponsor and counts each one.",
-    "steps": ["SELECT — fetches sponsor and count", "GROUP BY — groups by sponsor", "..."]
-  },
-  "insights": [
-    "NIH leads with 42 trials, nearly 3x the next sponsor.",
-    "Top 5 sponsors account for 60% of all trials."
-  ],
-  "followups": [
-    "Average enrollment per sponsor?",
-    "Which sponsor has most completed trials?",
-    "Top sponsors by phase 3 trials?"
-  ],
-  "chart_type": "bar",
-  "count": 25,
-  "latency_ms": 1840
-}
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | Web UI |
+| GET | `/status` | LLM availability |
+| POST | `/query` | NL → SQL → results + optional insights + `chart_type` + `intent` |
+| POST | `/upload-table` | Multipart file: `.csv`, `.xlsx`, `.xls` |
+| POST | `/chart-figure` | JSON: results + optional `chart_type` → Plotly payload |
+| POST | `/run-sql` | Run validated SELECT |
+| POST | `/clear-db`, `/clear-history` | Reset data or chat context |
+| GET | `/tables`, `/schema`, `/metrics` | Schema + simple metrics |
+
+---
+
+## Project layout
+
+```
+stratacore/
+  __init__.py
+  __main__.py       # uvicorn entry
+  main.py           # FastAPI routes
+  config.py
+  core_state.py     # state (active table, history, metrics)
+  db.py             # SQLite helpers
+  sql_ops.py        # validation and execution
+  ingestion.py      # Pandas → SQLite
+  plotly_figures.py # Plotly payload builder
+  query_engine.py   # NL→SQL orchestration + rule fallback
+  llm_sql.py        # Groq prompts (ReAct, insights, follow-ups)
+templates/
+  index.html
+requirements.txt
+pyproject.toml
 ```
 
----
-
-## Safety
-
-All SQL is validated before execution:
-- Only `SELECT` queries allowed
-- Blocks: `DELETE`, `DROP`, `UPDATE`, `INSERT`, `ALTER`, `TRUNCATE`, `CREATE`, `EXEC`, `PRAGMA`
-- LLM output validated for bracket-wrapped column names before execution
-- Self-correction loop catches runtime SQL errors
-
----
-
-## Example Queries
-
-| Question | What it does |
-|---|---|
-| `top 10 sponsors by enrollment` | GROUP BY + ORDER BY + LIMIT |
-| `average duration by phase` | AVG with GROUP BY |
-| `trials started in 2020` | WHERE date LIKE filter |
-| `count by status` | COUNT with GROUP BY |
-| `how many trials` | COUNT(*) stat card |
-| `trials with enrollment above 1000` | WHERE with CAST numeric filter |
-| `monthly trend` | strftime GROUP BY month |
-| `SELECT * FROM [trials] LIMIT 5` | Raw SQL passthrough |
+Database file: `store.db` (gitignored). Override path with env `STRATACORE_DB` if needed.
 
 ---
 
 ## Requirements
 
-```
-flask==3.0.3
-groq>=0.9.0
-python-dotenv>=1.0.0
-```
+Python 3.10+. Dependencies are listed in `requirements.txt` / `pyproject.toml`.
