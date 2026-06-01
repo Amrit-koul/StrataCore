@@ -17,33 +17,9 @@ StrataCore shortens time-to-answer by letting a user:
 This is a good fit for quick analysis, demos, and lightweight “spreadsheet analytics” workflows.
 
 ---
-
-## Architecture overview
-
-```mermaid
-flowchart TD
-  UI[Web UI (Jinja2 + JS + Plotly.js)] -->|/upload-table| API[FastAPI]
-  UI -->|/query| API
-  UI -->|/run-sql| API
-  UI -->|/chart-figure| API
-
-  API --> ING[Pandas ingestion]
-  ING --> DB[(SQLite store.db)]
-
-  API --> QE[NL→SQL orchestrator]
-  QE -->|LLM enabled| LLM[Groq LLM prompts]
-  QE -->|LLM disabled or invalid| RULES[Rule-based fallback]
-
-  QE --> SAFE[SQL guardrails (SELECT-only)]
-  SAFE --> DB
-
-  API --> FIG[Plotly payload builder]
-  FIG --> UI
-```
-
 ### Request/data flow (question → answer)
 
-1. UI sends a question to `POST /query` (optionally with an active table).
+1. UI sends a question to `POST /query`.
 2. Server generates SQL via LLM (schema + sample rows) or falls back to rules.
 3. SQL is validated as SELECT-only, then executed on SQLite.
 4. Results are returned with an explanation and optional insights/follow-ups.
